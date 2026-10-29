@@ -1,0 +1,15 @@
+
+{
+  "symbol": "BTC/USDT",
+  "timeframe": "1h",
+  "starting_quote_balance": 1000.0,
+  "initial_quote_allocation": 0.5,
+  "initial_base_allocation": 0.5,
+  "atr_period": 14,
+  "lookback_candles": 72,
+  "grid_intervals": 10,
+  "boundary_atr_multiplier": 0.5,
+  "minimum_range_atr": 6.0,
+  "maximum_range_atr": 20.0,
+  "drawdown_pause_fraction": 0.10
+}
