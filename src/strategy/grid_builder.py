@@ -4,6 +4,9 @@ import math
 from src.strategy.adaptive_grid import calculate_grid_levels
 from src.strategy.volatility import calculate_atr
 
+class GridRejectedError(ValueError):
+    """Raised when a calculated grid fails a strategy safety limit."""
+
 
 def build_adaptive_grid(
     highs: list[float],
@@ -92,10 +95,10 @@ def build_adaptive_grid(
     final_width = upper_bound - lower_bound
 
     if final_width > maximum_width:
-        raise ValueError(
+        raise GridRejectedError(
             "Calculated grid exceeds maximum permitted width; "
-            "grid generation rejected"
-        )
+        "grid generation rejected"
+    )
 
     levels = calculate_grid_levels(
         lower_bound,
