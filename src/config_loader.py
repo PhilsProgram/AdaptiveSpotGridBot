@@ -1,4 +1,3 @@
-
 import json
 import math
 from pathlib import Path
@@ -8,16 +7,24 @@ PROJECT_ROOT = Path(__file__).resolve().parent.parent
 CONFIG_FILE = PROJECT_ROOT / "config" / "strategy.json"
 
 
-def load_config() -> dict:
+def load_config(config_path: str | Path | None = None) -> dict:
     """Load and validate the bot's strategy configuration."""
+    
+    if config_path is None:
+        config_path = CONFIG_FILE
 
-    if not CONFIG_FILE.is_file():
+    config_path = Path(config_path)
+
+    if not config_path.is_absolute():
+        config_path = PROJECT_ROOT / config_path
+
+    if not config_path.is_file():
         raise FileNotFoundError(
-            f"Configuration file not found: {CONFIG_FILE}"
+            f"Configuration file not found: {config_path}"
         )
 
-    with CONFIG_FILE.open("r", encoding="utf-8") as file:
-        config = json.load(file)
+    with config_path.open("r", encoding="utf-8") as file:
+            config = json.load(file)
 
     required_keys = {
         "symbol",
@@ -32,6 +39,7 @@ def load_config() -> dict:
         "minimum_range_atr",
         "maximum_range_atr",
         "drawdown_pause_fraction",
+        "fee_rate",
     }
 
     missing_keys = required_keys - config.keys()
@@ -96,5 +104,10 @@ def load_config() -> dict:
 
     if not 0 < config["drawdown_pause_fraction"] < 1:
         raise ValueError("drawdown_pause_fraction must be between 0 and 1")
+    
+    if not 0 <= config["fee_rate"] < 1:
+        raise ValueError(
+            "fee_rate must be between 0 (inclusive) and 1 (exclusive)"
+    )
 
     return config

@@ -66,6 +66,10 @@ def run_grid_behavior_simulation(
                 - recent_low
                 + 2 * config["boundary_atr_multiplier"] * atr_value
             )
+            
+            recent_range = recent_high - recent_low
+
+            range_atr = recent_range / atr_value
 
             results.append({
                 "timestamp": current_candle["timestamp"],
@@ -78,6 +82,7 @@ def run_grid_behavior_simulation(
                 "status": "rejected",
                 "reason": str(exc),
                 "levels": [],
+                "range_atr": range_atr
             })
 
             continue
@@ -88,6 +93,9 @@ def run_grid_behavior_simulation(
         percentage_spacing = (
             (upper_bound / lower_bound) ** (1 / intervals) - 1
         ) * 100
+        
+        recent_range = grid["recent_high"] - grid["recent_low"]
+        range_atr = recent_range / grid["atr"]
 
         results.append({
             "timestamp": current_candle["timestamp"],
@@ -102,17 +110,19 @@ def run_grid_behavior_simulation(
             "grid_width_atr": (upper_bound - lower_bound) / grid["atr"],
             "status": "active",
             "levels": grid["levels"],
+            "range_atr": range_atr,
         })
 
     return results
 
 
 def simulate_grid_behavior(
-    csv_path: str = "data/btc_usdt_1h_90d.csv",
+    csv_path="data/btc_usdt_1h_90d.csv",
+    config_path="config/strategy.json",
 ) -> list[dict]:
     """Load historical data and run the grid behaviour simulation."""
 
-    config = load_config()
+    config = load_config(config_path)
 
     minimum_candles = max(
         config["atr_period"],
@@ -128,7 +138,9 @@ def simulate_grid_behavior(
 
 
 if __name__ == "__main__":
-    simulation_results = simulate_grid_behavior()
+    simulation_results = simulate_grid_behavior(
+        config_path="config/strategy.json"
+    )
 
     total = len(simulation_results)
 
@@ -146,6 +158,103 @@ if __name__ == "__main__":
 
     active_count = len(active_results)
     rejected_count = len(rejected_results)
+    
+        # Rejection analysis
+    rejection_widths = [
+        result["grid_width_atr"]
+        for result in rejected_results
+    ]
+
+    average_rejected_width = (
+        sum(rejection_widths) / len(rejection_widths)
+        if rejection_widths else 0
+    )
+
+    maximum_rejected_width = (
+        max(rejection_widths)
+        if rejection_widths else 0
+    )
+
+    longest_rejection_streak = 0
+    current_rejection_streak = 0
+    rejection_streak_count = 0
+    
+    rejection_periods = []
+    current_period = []
+
+    recovery_delays = []
+    calculations_since_rejection = None
+
+    for result in simulation_results:
+        if result["status"] == "rejected":
+            if current_rejection_streak == 0:
+                rejection_streak_count += 1
+
+            current_rejection_streak += 1
+            current_period.append(result)
+
+            longest_rejection_streak = max(
+                longest_rejection_streak,
+                current_rejection_streak
+            )
+
+            calculations_since_rejection = 0
+
+        else:
+            if current_period:
+                period_widths = [
+                    item["grid_width_atr"]
+                    for item in current_period
+                ]
+                
+                period_range_atr = [
+                    item["range_atr"]
+                    for item in current_period
+                ]
+
+                rejection_periods.append({
+                    "start": current_period[0]["timestamp"],
+                    "end": current_period[-1]["timestamp"],
+                    "candles": len(current_period),
+                    "average_width": sum(period_widths) / len(period_widths),
+                    "maximum_width": max(period_widths),
+                    "average_range_atr": sum(period_range_atr) / len(period_range_atr),
+                    "maximum_range_atr": max(period_range_atr),
+                })
+
+                current_period = []
+
+            current_rejection_streak = 0
+
+            if calculations_since_rejection is not None:
+                calculations_since_rejection += 1
+                recovery_delays.append(calculations_since_rejection)
+                calculations_since_rejection = None
+
+    # Include a rejection period that continues until the end of the dataset.
+    if current_period:
+        period_widths = [
+            item["grid_width_atr"]
+            for item in current_period
+        ]
+
+        rejection_periods.append({
+            "start": current_period[0]["timestamp"],
+            "end": current_period[-1]["timestamp"],
+            "candles": len(current_period),
+            "average_width": sum(period_widths) / len(period_widths),
+            "maximum_width": max(period_widths),
+        })
+
+    average_recovery_delay = (
+        sum(recovery_delays) / len(recovery_delays)
+        if recovery_delays else 0
+    )
+
+    maximum_recovery_delay = (
+        max(recovery_delays)
+        if recovery_delays else 0
+    )
 
     active_percentage = (
         active_count / total * 100 if total else 0
@@ -162,6 +271,30 @@ if __name__ == "__main__":
     print(f"Rejected grids: {rejected_count}")
     print(f"Active percentage: {active_percentage:.2f}%")
     print(f"Rejected percentage: {rejected_percentage:.2f}%")
+    
+    print("\nINDIVIDUAL REJECTION PERIODS")
+    print("----------------------------")
+
+    for index, period in enumerate(rejection_periods, start=1):
+        print(
+            f"Period {index}: "
+            f"{period['start']} to {period['end']} | "
+            f"Duration: {period['candles']} candles | "
+            f"Average range: {period['average_range_atr']:.2f} ATR | "
+            f"Maximum range: {period['maximum_range_atr']:.2f} ATR | "
+            f"Average grid width: {period['average_width']:.2f} ATR | "
+            f"Maximum grid width: {period['maximum_width']:.2f} ATR"
+        )
+    
+    print("\nREJECTION ANALYSIS")
+    print("------------------")
+    print(f"Number of rejection periods: {rejection_streak_count}")
+    print(f"Longest rejection streak: {longest_rejection_streak} candles")
+    print(f"Average rejected grid width: {average_rejected_width:.2f} ATR")
+    print(f"Maximum rejected grid width: {maximum_rejected_width:.2f} ATR")
+    print(f"Completed recovery periods: {len(recovery_delays)}")
+    print(f"Average recovery delay: {average_recovery_delay:.2f} candles")
+    print(f"Maximum recovery delay: {maximum_recovery_delay} candles")
 
     if active_results:
         first = active_results[0]
@@ -189,6 +322,47 @@ if __name__ == "__main__":
 
         for index, level in enumerate(latest["levels"]):
             print(f"Level {index}: {level:.2f}")
+            
+        if rejected_results:
+            print("\nALL REJECTION PERIODS")
+            print("---------------------")
+
+        rejection_groups = []
+        current_group = []
+
+        for result in simulation_results:
+            if result["status"] == "rejected":
+                current_group.append(result)
+            else:
+                if current_group:
+                    rejection_groups.append(current_group)
+                    current_group = []
+
+        if current_group:
+            rejection_groups.append(current_group)
+
+        for index, group in enumerate(rejection_groups, start=1):
+            start_time = group[0]["timestamp"]
+            end_time = group[-1]["timestamp"]
+
+            duration = len(group)
+
+            maximum_width = max(
+                item["grid_width_atr"]
+                for item in group
+            )
+
+            average_width = sum(
+                item["grid_width_atr"]
+                for item in group
+            ) / duration
+
+            print(f"\nPeriod {index}")
+            print(f"Start: {start_time}")
+            print(f"End: {end_time}")
+            print(f"Duration: {duration} candles")
+            print(f"Maximum width: {maximum_width:.2f} ATR")
+            print(f"Average width: {average_width:.2f} ATR")
 
     if rejected_results:
         print("\nFIRST FIVE REJECTIONS")

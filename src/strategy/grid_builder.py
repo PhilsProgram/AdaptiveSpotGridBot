@@ -97,7 +97,7 @@ def build_adaptive_grid(
     if final_width > maximum_width:
         raise GridRejectedError(
             "Calculated grid exceeds maximum permitted width; "
-        "grid generation rejected"
+            "grid generation rejected"
     )
 
     levels = calculate_grid_levels(
